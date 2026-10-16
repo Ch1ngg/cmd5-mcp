@@ -18,11 +18,15 @@ English: a zero-dependency MCP stdio server that decrypts hashes (md5/sha1/sha25
 |---|---|
 | `CMD5_EMAIL` | cmd5.com 账号邮箱 |
 | `CMD5_KEY` | cmd5.com API Key（改密码后 key 会变） |
-| `HTTP_PROXY` / `HTTPS_PROXY` | 可选，走代理 |
+| `SOCKS5_PROXY` | 可选，`socks5://[user:pass@]host:port`——查询流量经 socks5 出口（隧道/VPS），不落本机 IP |
+| `HTTP_PROXY` / `HTTPS_PROXY` | 可选，HTTP 代理 |
+| `CMD5_HTTP_TOKEN` | HTTP 模式下的 Bearer 认证 token（网络面暴露时强烈建议设置） |
 
 凭据留空也能挂载（工具列表可见），调用时才提示配置。
 
-## MCP 客户端配置
+## 传输模式
+
+**stdio（默认）**：MCP 客户端以子进程拉起，常规用法。
 
 ```json
 {
@@ -33,6 +37,30 @@ English: a zero-dependency MCP stdio server that decrypts hashes (md5/sha1/sha25
         "CMD5_EMAIL": "you@example.com",
         "CMD5_KEY": "your-api-key"
       }
+    }
+  }
+}
+```
+
+**HTTP**：`cmd5-mcp -http :9100` 起 HTTP 服务，同时提供两种形态——
+
+- `POST /mcp`：streamable HTTP（请求即响应）
+- `GET /sse` + `POST /message?sessionId=…`：legacy SSE 长连
+
+设了 `CMD5_HTTP_TOKEN` 后两种形态都要求 `Authorization: Bearer <token>`。
+
+```bash
+CMD5_HTTP_TOKEN=$(openssl rand -hex 24) cmd5-mcp -http 127.0.0.1:9100
+```
+
+MCP 客户端配置（HTTP 形态）：
+
+```json
+{
+  "mcpServers": {
+    "cmd5": {
+      "url": "http://127.0.0.1:9100/mcp",
+      "headers": { "Authorization": "Bearer <token>" }
     }
   }
 }

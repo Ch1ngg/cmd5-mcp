@@ -8,13 +8,12 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
-	"net/http"
 	"net/url"
 	"os"
 	"strings"
-	"time"
 )
 
 const (
@@ -73,23 +72,6 @@ func send(msg map[string]any) {
 	out.Flush()
 }
 
-func result(id json.RawMessage, payload any) {
-	send(map[string]any{"jsonrpc": "2.0", "id": json.RawMessage(id), "result": payload})
-}
-
-func rpcError(id json.RawMessage, code int, message string) {
-	send(map[string]any{"jsonrpc": "2.0", "id": json.RawMessage(id),
-		"error": map[string]any{"code": code, "message": message}})
-}
-
-func textResult(id json.RawMessage, text string, isError bool) {
-	payload := map[string]any{"content": []map[string]any{{"type": "text", "text": text}}}
-	if isError {
-		payload["isError"] = true
-	}
-	result(id, payload)
-}
-
 // cmd5Query 调 cmd5.com 在线解密。凭据空调用才校验——挂载工具列表不需要凭据。
 func cmd5Query(hashes string) (string, string) {
 	email := strings.TrimSpace(os.Getenv("CMD5_EMAIL"))
@@ -105,8 +87,7 @@ func cmd5Query(hashes string) (string, string) {
 		return "", "条数超过 100 条上限（CMD5-ERROR:-9）。"
 	}
 	qs := url.Values{"email": {email}, "key": {key}, "hash": {hashes}}.Encode()
-	client := &http.Client{Timeout: 30 * time.Second} // Transport 默认认 HTTP(S)_PROXY 环境变量
-	resp, err := client.Get(apiURL + "?" + qs)
+	resp, err := httpClient().Get(apiURL + "?" + qs)
 	if err != nil {
 		return "", fmt.Sprintf("请求 cmd5.com 失败: %v", err)
 	}
@@ -127,7 +108,51 @@ func cmd5Query(hashes string) (string, string) {
 	return body, ""
 }
 
-func main() {
+// handleRPC 处理单条 JSON-RPC 请求，返回应答（通知返回 nil）。stdio 与 HTTP 共用。
+func handleRPC(req rpcRequest) map[string]any {
+	resultFn := func(payload any) map[string]any {
+		return map[string]any{"jsonrpc": "2.0", "id": req.ID, "result": payload}
+	}
+	errorFn := func(code int, message string) map[string]any {
+		return map[string]any{"jsonrpc": "2.0", "id": req.ID,
+			"error": map[string]any{"code": code, "message": message}}
+	}
+	textFn := func(text string, isError bool) map[string]any {
+		payload := map[string]any{"content": []map[string]any{{"type": "text", "text": text}}}
+		if isError {
+			payload["isError"] = true
+		}
+		return resultFn(payload)
+	}
+
+	switch req.Method {
+	case "initialize":
+		return resultFn(map[string]any{
+			"protocolVersion": protocolVersion,
+			"capabilities":    map[string]any{"tools": map[string]any{}},
+			"serverInfo":      map[string]any{"name": serverName, "version": serverVersion},
+		})
+	case "ping":
+		return resultFn(map[string]any{})
+	case "tools/list":
+		return resultFn(map[string]any{"tools": []map[string]any{cmd5Tool}})
+	case "tools/call":
+		if req.Params.Name != "cmd5_decrypt" {
+			return errorFn(-32602, fmt.Sprintf("unknown tool: %s", req.Params.Name))
+		}
+		hashes, _ := req.Params.Arguments["hashes"].(string)
+		body, errText := cmd5Query(hashes)
+		if errText != "" {
+			return textFn(errText, true)
+		}
+		return textFn(body, false)
+	default:
+		return errorFn(-32601, fmt.Sprintf("method not found: %s", req.Method))
+	}
+}
+
+// runStdio 跑 stdio 传输（默认）：换行分隔的 JSON-RPC。
+func runStdio() {
 	sc := bufio.NewScanner(os.Stdin)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for sc.Scan() {
@@ -142,31 +167,18 @@ func main() {
 		if len(req.ID) == 0 || string(req.ID) == "null" {
 			continue // 通知（如 notifications/initialized）无需应答
 		}
-		switch req.Method {
-		case "initialize":
-			result(req.ID, map[string]any{
-				"protocolVersion": protocolVersion,
-				"capabilities":    map[string]any{"tools": map[string]any{}},
-				"serverInfo":      map[string]any{"name": serverName, "version": serverVersion},
-			})
-		case "ping":
-			result(req.ID, map[string]any{})
-		case "tools/list":
-			result(req.ID, map[string]any{"tools": []map[string]any{cmd5Tool}})
-		case "tools/call":
-			if req.Params.Name != "cmd5_decrypt" {
-				rpcError(req.ID, -32602, fmt.Sprintf("unknown tool: %s", req.Params.Name))
-				continue
-			}
-			hashes, _ := req.Params.Arguments["hashes"].(string)
-			body, errText := cmd5Query(hashes)
-			if errText != "" {
-				textResult(req.ID, errText, true)
-			} else {
-				textResult(req.ID, body, false)
-			}
-		default:
-			rpcError(req.ID, -32601, fmt.Sprintf("method not found: %s", req.Method))
-		}
+		send(handleRPC(req))
 	}
+}
+
+func main() {
+	var httpAddr string
+	flag.StringVar(&httpAddr, "http", "", "启用 HTTP 传输（如 :9100）：同时提供 POST /mcp（streamable）与 GET /sse + POST /message（legacy SSE）；认证用 env CMD5_HTTP_TOKEN（Bearer，建议非空）")
+	flag.Parse()
+
+	if httpAddr != "" {
+		serveHTTP(httpAddr)
+		return
+	}
+	runStdio()
 }
