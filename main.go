@@ -17,11 +17,13 @@ import (
 )
 
 const (
-	apiURL          = "http://www.cmd5.com/api.ashx"
 	serverName      = "cmd5"
-	serverVersion   = "1.1.0"
+	serverVersion   = "1.2.0"
 	protocolVersion = "2024-11-05"
 )
+
+// apiURL 是 cmd5.com 的查询端点（var 以便测试指向本地桩）。
+var apiURL = "http://www.cmd5.com/api.ashx"
 
 // cmd5.com 错误码 → 中文提示
 var errText = map[string]string{

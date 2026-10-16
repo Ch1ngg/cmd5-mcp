@@ -1,0 +1,17 @@
+# 推 main / 提 PR 就跑测试（发布流程里也有一道 test 门禁）。
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+      - run: go vet ./... && go test ./... -count=1
