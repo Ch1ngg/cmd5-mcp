@@ -18,8 +18,7 @@ English: a zero-dependency MCP stdio server that decrypts hashes (md5/sha1/sha25
 |---|---|
 | `CMD5_EMAIL` | cmd5.com 账号邮箱 |
 | `CMD5_KEY` | cmd5.com API Key（改密码后 key 会变） |
-| `SOCKS5_PROXY` | 可选，`socks5://[user:pass@]host:port`——查询流量经 socks5 出口（隧道/VPS），不落本机 IP |
-| `HTTP_PROXY` / `HTTPS_PROXY` | 可选，HTTP 代理 |
+| `CMD5_PROXY` | 可选，出口代理——`socks5://[user:pass@]host:port` 或 `http(s)://host:port`。刻意不读 `HTTP_PROXY` 等系统代理变量，避免误走系统代理 |
 | `CMD5_HTTP_TOKEN` | HTTP 模式下的 Bearer 认证 token（网络面暴露时强烈建议设置） |
 
 凭据留空也能挂载（工具列表可见），调用时才提示配置。
@@ -27,6 +26,16 @@ English: a zero-dependency MCP stdio server that decrypts hashes (md5/sha1/sha25
 ## 传输模式
 
 **stdio（默认）**：MCP 客户端以子进程拉起，常规用法。
+
+
+## 命令行直接查询（CLI）
+
+不想挂 MCP、只在终端查一次时：
+
+```bash
+CMD5_EMAIL=you@example.com CMD5_KEY=xxx cmd5-mcp query e10adc3949ba59abbe56e057f20f883e
+# 多条逗号分隔；也可以 CMD5_PROXY=socks5://127.0.0.1:1080 走代理
+```
 
 ```json
 {

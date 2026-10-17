@@ -176,7 +176,35 @@ func runStdio() {
 func main() {
 	var httpAddr string
 	flag.StringVar(&httpAddr, "http", "", "启用 HTTP 传输（如 :9100）：同时提供 POST /mcp（streamable）与 GET /sse + POST /message（legacy SSE）；认证用 env CMD5_HTTP_TOKEN（Bearer，建议非空）")
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "用法：\n  cmd5-mcp                      MCP stdio 服务器（默认）\n  cmd5-mcp -http :9100          MCP HTTP 服务器\n  cmd5-mcp query <hashes>       命令行直接查询（逗号分隔多条，≤100）\n")
+		flag.PrintDefaults()
+	}
 	flag.Parse()
+
+	args := flag.Args()
+	if len(args) > 0 {
+		switch args[0] {
+		case "query":
+			if len(args) < 2 {
+				fmt.Fprintln(os.Stderr, "用法：cmd5-mcp query <hashes>（逗号分隔多条）")
+				os.Exit(2)
+			}
+			text, errTextOut := cmd5Query(strings.Join(args[1:], ","))
+			if errTextOut != "" {
+				fmt.Fprintln(os.Stderr, errTextOut)
+				os.Exit(1)
+			}
+			out.WriteString(text)
+			out.WriteString("\n")
+			out.Flush()
+			return
+		default:
+			fmt.Fprintf(os.Stderr, "未知子命令 %q\n", args[0])
+			flag.Usage()
+			os.Exit(2)
+		}
+	}
 
 	if httpAddr != "" {
 		serveHTTP(httpAddr)
